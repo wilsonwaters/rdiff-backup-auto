@@ -1,0 +1,302 @@
+#!/bin/bash
+#
+# Wilson Waters - 7/6/04
+#
+# This script uses rdiff-backup to perform a nightly backup of various
+# servers to this computer. It should be called via cron and should be
+# configured to send stderr to a sysadmin.
+#
+# This script can be called with one optional parameter, the config file.
+#
+# modified 20070502 use optional ssh username rather than root (default root)
+# modified 20080723 no longer fails if ping to host fails (iinet block ping)
+# modified 20090507 replaced remote server tests (ping and version) with
+#                   the rdiff-backup --test-server function
+# modified 20090507 added test for rdiff-backup failure
+# bugfix   20090515 INCLUDE_DIRS and EXCLUDE_DIRS were not being unset between
+#                   different backup hosts.
+# modified 20090709 added COPY_FILE feature.
+# modified 20100205 added EXCLUDE_BY_DEFAULT feature and reversed order of
+#                   include/exclude directives
+# bugfix   20100310 Force removal of old backups even if multiple exist
+
+MAIN_CONFIG=/etc/backup/backup.conf
+RDIFF_BACKUP=/usr/bin/rdiff-backup
+
+
+#check for parameters
+if [ $# -eq 1 ] ; then
+   MAIN_CONFIG=$1
+elif [ $# -ne 0 ] ; then
+   cat 1>&2 <<EOF
+Usage: $0 [config-file]
+ Unrecognised parameters
+EOF
+   exit 1
+fi
+
+# make sure main config file exists and is readable
+if [ ! -r $MAIN_CONFIG ] ; then
+   cat 1>&2 <<EOF
+Backup failed: unable to open config file $MAIN_CONFIG
+EOF
+   exit 1
+fi
+
+# read in the config file
+. ${MAIN_CONFIG:?Something strange happened. Config file couldn\'t be read}
+
+# Set debugging output to default and make sure people know how to
+# stop debug messages.
+if [ ${DEBUG:=1} -ne 0 ] ; then
+   cat 1>&2 <<EOF
+Backup debugging enabled. Set DEBUG=0 in the configuration to stop these
+messages.
+EOF
+fi
+
+# make sure rdiff-backup exists and is executable
+if [ ! -x $RDIFF_BACKUP ] ; then
+   cat 1>&2 <<EOF
+Backup failed: unable to execute $RDIFF_BACKUP. Please specify a location
+in the headers of the backup script.
+EOF
+   exit 1
+fi
+
+## work out the version for later use - ww20090507 not required any more
+#localVersion=`$RDIFF_BACKUP -V`
+
+# get each config file. loop till they're all done!
+config_files=`ls ${HOST_CONFIGS_DIR:?Config directory must be set}`
+
+for config_file in $config_files
+do
+   #get the hostname
+   hostname="`echo $config_file | sed -e 's/backup\.\(.*\)/\1/'`";
+  
+   if [ $DEBUG -ne 0 ] ; then
+      cat <<EOF
+
+
+--------------------------Backup for $hostname----------------------
+EOF
+   fi
+
+#   # ww20090507 - don't bother with this any more.
+#   # Use the rdiff-backup --test-server function
+#   #make sure it's reachable
+#   `/bin/ping -c1 $hostname > /dev/null 2> /dev/null`
+#   if [ $? -ne 0 ] ; then
+#      cat 1>&2 <<EOF
+#Backup may fail for $hostname: $hostname was unreachable through ping
+#EOF
+##      continue;
+#   fi
+
+   #check if we're local or not
+   thisHostname=`hostname`
+   if [[ $thisHostname == $hostname.* ]] ; then
+      local=0
+   else
+      local=1
+   fi
+
+   
+   #make sure the config file is readable
+   if [ ! -r $HOST_CONFIGS_DIR/$config_file ] ; then
+      cat 1>&2 <<EOF
+Backup failed for $hostname: $HOST_CONFIGS_DIR/config_file was not readable
+EOF
+      continue;
+   fi
+   
+   # zap any existing variables
+   unset SSH_USER
+   unset START_DIR
+   unset INCLUDE_DIRS
+   unset EXCLUDE_DIRS
+   unset EXCLUDE_BY_DEFAULT
+
+   #get all the variabes from the config file
+   . $HOST_CONFIGS_DIR/$config_file
+
+   # If a username has been specified, use it. Otherwise use "root"
+   sshUsername=${SSH_USER:-"root"}
+
+   #make sure the START_DIR variable is set.
+   if [[ ${START_DIR:-} == "" ]] ; then
+      cat 1>&2 <<EOF
+Backup failed for $hostname: There was no specified start directory to backup
+on $hostname.
+Please add a START_DIR in the config file.
+Continuing with next backup host
+EOF
+      continue;
+   fi
+
+#   # ww20090507 - replace this with the new rdiff-backup --test-server function
+#   # check that the version on both computers are the same only if it's remote
+#   [ $local -ne 0 ] &&
+#   [ "`ssh $sshUsername@$hostname 'rdiff-backup -V'`" != "$localVersion" ] && 
+#   {
+#      cat 1>&2 <<EOF
+#Backup failed for $hostname: There as a difference in versions. Please fix
+# local rdiff-backup version:  $localVersion
+# remote rdiff-backup version: $remoteVersion
+# Continuing with next backup host
+#EOF
+#      continue;
+#   }
+#    output=`$RDIFF_BACKUP --test-server ${sshUsername}@${hostname}::${START_DIR} ${BACKUP_DIR}/${hostname} 2>&1`
+#   if [ $? -ne 0 ] ; then
+#      cat 1>&2 <<EOF
+#Backup failed for $hostname: The rdiff-backup server test failed
+#
+#$output
+#
+#Continuing with next backup host
+#EOF
+#      continue;
+#   fi
+
+   # make sure the desitnation dir exists, if not, create it.
+   mkdir -p ${BACKUP_DIR}/${hostname}
+
+   # Now, remove old backups
+   if [ $KEEP_BACKUP_DAYS -gt 0 ] ; then
+      output=`$RDIFF_BACKUP $RDIFF_BACKUP_PARAMETERS --force --remove-older-than ${KEEP_BACKUP_DAYS}D ${BACKUP_DIR}/${hostname:?There was a problem creating or reading destination directory} 2>&1`
+      if [ $? -ne 0 ] ; then
+         cat 1>&2 <<EOF
+Backup had errors: Could not remove backups older than $KEEP_BACKUP_DAYS days
+from ${BACKUP_DIR}/$hostname
+$output
+EOF
+      fi
+
+      #handle debugging output (will probably be mailed by cron)
+      if [ $DEBUG -ne 0 ] ; then
+         cat <<EOF
+$output
+EOF
+      fi
+   fi
+
+
+   # build backup string
+   execString=""
+   execString="$RDIFF_BACKUP $RDIFF_BACKUP_PARAMETERS "
+
+   # do we want debugging info sent?
+   if [ $DEBUG -ne 0 ] ; then
+      execString="${execString} --print-statistics "
+   fi
+
+   # build the excluded dirs statement if there's any to exclude.
+   excludeExecString=""
+   for excludeDir in $EXCLUDE_DIRS
+   do
+      excludeExecString="${excludeExecString} --exclude $excludeDir "
+   done
+
+   # build the included dirs statement if there's any to include
+   includeExecString=""
+   for includeDir in $INCLUDE_DIRS
+   do
+      includeExecString="${includeExecString} --include $includeDir "
+   done
+
+   # Add the include/exclude directives to the exec string.
+   # The order we include/exclude things is dependant on EXCLUDE_BY_DEFAULT
+   if [ ${EXCLUDE_BY_DEFAULT:-0} -eq 1 ] ; then
+      execString="${execString} $excludeExecString $includeExecString --exclude ${START_DIR} "
+   else
+      execString="${execString} $includeExecString $excludeExecString "
+   fi
+
+   # check if the current backup client is local or not and create the remote
+   # directory string
+   if [ `hostname` = $hostname ] ; then
+      execString="${execString} ${START_DIR} "
+   else
+      execString="${execString} ${sshUsername}@${hostname}::${START_DIR} "
+   fi
+   
+   # finally, add the local backup directory, specifying the hostname as a
+   # sub directory
+   execString="${execString} ${BACKUP_DIR}/${hostname}"
+
+   # print some more debugging info
+   if [ $DEBUG -ne 0 ] ; then
+cat <<EOF
+Executing rdiff-backup command:
+$execString
+EOF
+   fi
+
+   # Run the rdiff command!
+   output=`$execString 2>&1`
+
+   #ww20090507 - add a test for failed backup
+   if [ $? -ne 0 ] ; then
+      cat 1>&2 <<EOF
+Backup failed for $hostname:
+
+$output
+
+EOF
+   # print debugging info (will probably be mailed by cron, hence stderr)
+   elif [ $DEBUG -ne 0 ] ; then
+      cat <<EOF
+$output
+EOF
+   fi
+
+   if [ $DEBUG -ne 0 ] ; then
+cat <<EOF
+
+--------------------------$hostname Backup Complete-----------------
+EOF
+   fi
+done
+
+   if [ $DEBUG -ne 0 ] ; then
+cat <<EOF
+
+--------------------------Backup Complete---------------------------
+EOF
+   fi
+
+
+# ww 20090709 addition - create a tar and copy it to the server
+if [[ ${COPY_FILE:-} != "" ]] ; then
+
+   if [ $DEBUG -ne 0 ] ; then
+      cat <<EOF
+
+--------------------------Taring + Copying--------------------------
+EOF
+   fi
+
+   # move the last backup tar - we will delete it after creating the new one
+   if [ -r "${COPY_FILE}" ] ; then
+      mv "${COPY_FILE}" "${COPY_FILE}.old"
+   fi
+
+   # tar everything up
+   /bin/tar --gzip -c -C ${BACKUP_DIR} -f "${COPY_FILE}" .
+
+   # remove the old tar
+   if [ -r "${COPY_FILE}.old" ] ; then
+      rm "${COPY_FILE}.old"
+   fi
+
+   if [ $DEBUG -ne 0 ] ; then
+      cat <<EOF
+
+--------------------------Taring + Copying Complete-----------------
+EOF
+   fi
+
+fi
+
