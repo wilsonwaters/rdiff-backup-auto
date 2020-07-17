@@ -1,7 +1,7 @@
 # rdiff-backup-auto
 Automatic centralised backups for multiple hosts using [rdiff-backup](https://github.com/rdiff-backup/rdiff-backup) and [cron](https://en.wikipedia.org/wiki/Cron).
 
-rdiff-backup is a command line backup tool which efficiently copies a directory structure and keeps incremental revisions of changes. Backups are stored locally as a simple mirrored folder for quick recovery of files. Historical versions of files can be recovered by the rdiff-backup tool.
+rdiff-backup is a command line backup tool which efficiently copies a directory structure and keeps incremental revisions of changes. Backups are stored locally as a simple mirrored folder for quick restoration of files. Historical versions of files can be restored by the rdiff-backup tool.
 
 rdiff-backup-auto is a bash script and simple configuration files which can be called by cron to backup a set of hosts via ssh. New hosts can be configured by adding a single configuration file. The configuration file provides a simple flexible mechanism to exclude/include files and folders (such as system folders) with sensible defaults.
 
@@ -26,7 +26,7 @@ The server should have sufficient storage to hold all host filesystems (uncompre
         sudo cp rdiff-backup-auto/rdiff-backup-auto /etc/cron.d/
         sudo mkdir -p /etc/backup/hosts
         sudo cp rdiff-backup-auto/backup.conf /etc/backup/
-1. Configure rdiff-backup-auto (see configure section below)
+1. Configure rdiff-backup-auto (see configuration section below)
 
         sudo vim /etc/backup/backup.conf
         sudo vim /etc/backup/backup.host.example.com
@@ -58,7 +58,7 @@ The hosts to be backed up should have a similar version of rdiff-backup installe
         sudo vim /etc/backup/hosts/backup.hostname
 # Configuration
 
-Defaults in configuration files should be suitable for most situations. The configuration files simplify the rfiff-backup options. Configuring a new host to be backed up is as simple as making a copy of the example host config on the server.
+Defaults in configuration files should be suitable for most situations. The configuration files simplify the rdiff-backup options. Configuring a new host to be backed up is as simple as making a copy of the example host config on the server.
 
 ## Server
 
@@ -72,7 +72,7 @@ HOST_CONFIGS_DIR=/etc/backup/hosts
 # Number of days to keep backups for. If unset backups will be kept forever
 KEEP_BACKUP_DAYS=365
 
-# parameters to pass to rdiff-backup. See man rdiff-backup for all paramters
+# parameters to pass to rdiff-backup. See man rdiff-backup for more
 RDIFF_BACKUP_PARAMETERS=""
 
 # set to 1 for debugging information to be output to stdout (cron will email this)
@@ -95,7 +95,7 @@ START_DIR="/"
 # Exclude everything by default. Only backup specifically included directories
 #EXCLUDE_BY_DEFAULT=1
 
-# Directories to indlude/exclude. Use a space to seperate. 
+# Directories to indlude/exclude. Use a space to separate. 
 # Standard shell patterns can be used (*, $, [])
 # INCLUDE_DIRS will have preference.
 # ie. if we include /usr/data/testuser but exclude /usr/data everything under
@@ -105,3 +105,7 @@ EXCLUDE_DIRS="/proc /tmp /mnt /media /dev /tmp /sys /lost+found /usr/data*"
 ```
 
 # Usage
+
+The backup is run automatically by cron. Ensure cron is configured to email failed tasks to an administrator. You can test this by setting DEBUG=1 in the configuration.
+
+Restoring files is as simple as copying them directly from the backup folder (use scp if you need to copy them back to the remote host). You can also use the standard rdiff-backup commands (see man rdiff-backup or [rdiff-backup webpage](https://rdiff-backup.net/)).
