@@ -24,12 +24,13 @@ The server should have sufficient storage to hold all host filesystems (uncompre
 1. Install rdiff-backup-auto files
 
         sudo cp rdiff-backup-auto/rdiff-backup-auto /etc/cron.d/
+        sudo chmod 755 /etc/cron.d/rdiff-backup-auto
         sudo mkdir -p /etc/backup/hosts
         sudo cp rdiff-backup-auto/backup.conf /etc/backup/
+        sudo cp rdiff-backup-auto/backup.hostname.example.com /etc/backup/
 1. Configure rdiff-backup-auto (see configuration section below)
 
         sudo vim /etc/backup/backup.conf
-        sudo vim /etc/backup/backup.host.example.com
 1. Configure cron (example, run at 3:30am every day).
 
         sudo echo "30 3 * * *      root    /etc/cron.d/backup" >> /etc/crontab
@@ -40,7 +41,7 @@ The server should have sufficient storage to hold all host filesystems (uncompre
         sudo cat ~/.ssh/id_rsa.pub
 ## Host
 
-The hosts to be backed up should have a similar version of rdiff-backup installed (though different versions don't seem to cause a problem).
+The hosts to be backed up should have a similar version of rdiff-backup installed (though different versions don't seem to cause a problem). Some systems, such as Windows, may need an SSH serice installed.
 
 1. Install rdiff-backup on host to be backed up
 
@@ -54,7 +55,7 @@ The hosts to be backed up should have a similar version of rdiff-backup installe
 1. Configure host. See configuration section below for details
 
         # Run on the server
-        sudo cp rdiff-backup-auto/backup.host.example.com /etc/backup/hosts/backup.hostname # hostname refers to the DNS name or IP address of the host to be backed up
+        sudo cp /etc/backup/backup.hostname.example.com /etc/backup/hosts/backup.hostname # hostname refers to the DNS name or IP address of the host to be backed up
         sudo vim /etc/backup/hosts/backup.hostname
 # Configuration
 
